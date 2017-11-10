@@ -1,0 +1,25 @@
+{
+	"auth": {
+		"authorizeURL": "https://accounts.spotify.com/authorize/",
+		"tokenURL": "https://accounts.spotify.com/api/token",
+		"redirect": "http://localhost:3000/callback",
+		"scope": [
+			"user-modify-playback-state",
+			"user-read-currently-playing",
+			"user-read-playback-state",
+			"user-read-recently-played"
+		]
+	},
+	"cookie": {
+		"spotifyAccessToken": "spotify_access_token",
+		"spotifyAuthState": "spotify_auth_state",
+		"spotifyRefreshToken": "spotify_refresh_token"
+	},
+	"env": {
+		"spotifyID": "SPOTIFY_ID",
+		"spotifySecret": "SPOTIFY_SECRET"
+	},
+	"path": "./public",
+	"port": 3000,
+	"appURL": "http://localhost:8080"
+}
