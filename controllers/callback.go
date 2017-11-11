@@ -10,6 +10,14 @@ import (
 	"time"
 )
 
+type token struct {
+	AccessToken  string `json:"access_token"`
+	TokenType    string `json:"token_type"`
+	Scope        string `json:"scope"`
+	ExpiresIn    int    `json:"expires_in"`
+	RefreshToken string `json:"refresh_token"`
+}
+
 func getAuthToken(r *http.Request, originalState string) (*token, error) {
 	newState := r.URL.Query().Get("state")
 	if newState != originalState {
@@ -45,21 +53,24 @@ func getAuthToken(r *http.Request, originalState string) (*token, error) {
 func Callback(w http.ResponseWriter, r *http.Request) {
 	state, err := r.Cookie(authStateCookieName)
 	if err != nil {
-		// append error to url query
+		// error header
 		fmt.Println(err)
 		return
 	}
+	ClearCookie(w, authStateCookieName)
 	token, err := getAuthToken(r, state.Value)
 	if err != nil {
-		// append error to url query
+		// error header
 		fmt.Println(err)
 		return
 	}
-	accessTokenExpiry := time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
-	refreshTokenExpiry := time.Now().Add(30 * 24 * time.Hour)
-	accessTokenCookie := CreateCookie(accessTokenCookieName, token.AccessToken, accessTokenExpiry)
-	refreshTokenCookie := CreateCookie(refreshTokenCookieName, token.RefreshToken, refreshTokenExpiry)
-	ClearCookies(w, authStateCookieName)
-	WriteCookies(w, accessTokenCookie, refreshTokenCookie)
+	accessTokenExpiry := time.Now().Add(time.Duration(token.ExpiresIn) * time.Second).Format(time.RFC1123)
+	instantExpiry := time.Now().Add(1 * time.Second)
+	accessTokenCookie := CreateCookie(accessTokenCookieName, token.AccessToken, instantExpiry, false)
+	refreshTokenCookie := CreateCookie(refreshTokenCookieName, token.RefreshToken, instantExpiry, false)
+	tokenExpiryCookie := CreateCookie(tokenExpiryCookieName, accessTokenExpiry, instantExpiry, false)
+	http.SetCookie(w, accessTokenCookie)
+	http.SetCookie(w, refreshTokenCookie)
+	http.SetCookie(w, tokenExpiryCookie)
 	http.Redirect(w, r, appURL, 302)
 }

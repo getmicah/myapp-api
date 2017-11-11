@@ -10,9 +10,10 @@ import (
 
 // Login : redirect user to Spotify login
 func Login(w http.ResponseWriter, r *http.Request) {
-	expiry := time.Now().Add(1 * time.Hour)
+	dur := 3600 * time.Second
+	expiry := time.Now().Add(dur)
 	state := GenerateRandomString(16)
-	stateCookie := CreateCookie(authStateCookieName, state, expiry)
+	stateCookie := CreateCookie(authStateCookieName, state, expiry, true)
 	http.SetCookie(w, stateCookie)
 	authURL := fmt.Sprintf(
 		"%s?client_id=%s&response_type=%s&redirect_uri=%s&scope=%s&state=%s",

@@ -17,6 +17,7 @@ type AppConfig struct {
 		SpotifyAccessToken  string `json:"spotifyAccessToken"`
 		SpotifyAuthState    string `json:"spotifyAuthState"`
 		SpotifyRefreshToken string `json:"spotifyRefreshToken"`
+		SpotifyTokenExpiry  string `json:"spotifyTokenExpiry"`
 	} `json:"cookie"`
 	Env struct {
 		SpotifyID     string `json:"spotifyID"`
@@ -24,6 +25,7 @@ type AppConfig struct {
 	}
 	Path   string `json:"path"`
 	Port   int    `json:"port"`
+	APIURL string `json:"apiURL"`
 	AppURL string `json:"appURL"`
 }
 

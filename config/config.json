@@ -13,7 +13,8 @@
 	"cookie": {
 		"spotifyAccessToken": "spotify_access_token",
 		"spotifyAuthState": "spotify_auth_state",
-		"spotifyRefreshToken": "spotify_refresh_token"
+		"spotifyRefreshToken": "spotify_refresh_token",
+		"spotifyTokenExpiry": "spotify_token_expiry"
 	},
 	"env": {
 		"spotifyID": "SPOTIFY_ID",
@@ -21,5 +22,6 @@
 	},
 	"path": "./public",
 	"port": 3000,
+	"apiURL": "http://localhost:3000",
 	"appURL": "http://localhost:8080"
 }
