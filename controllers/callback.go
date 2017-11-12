@@ -10,19 +10,7 @@ import (
 	"time"
 )
 
-type token struct {
-	AccessToken  string `json:"access_token"`
-	TokenType    string `json:"token_type"`
-	Scope        string `json:"scope"`
-	ExpiresIn    int    `json:"expires_in"`
-	RefreshToken string `json:"refresh_token"`
-}
-
-func getAuthToken(r *http.Request, originalState string) (*token, error) {
-	newState := r.URL.Query().Get("state")
-	if newState != originalState {
-		return nil, errors.New("state error")
-	}
+func getAuthToken(r *http.Request) (*Token, error) {
 	authErr := r.URL.Query().Get("error")
 	if authErr != "" {
 		return nil, errors.New(authErr)
@@ -34,15 +22,16 @@ func getAuthToken(r *http.Request, originalState string) (*token, error) {
 	data := url.Values{}
 	data.Set("grant_type", "authorization_code")
 	data.Set("code", code)
-	data.Set("redirect_uri", redirectURI)
-	data.Set("client_id", clientID)
-	data.Set("client_secret", clientSecret)
-	u, _ := url.ParseRequestURI(tokenURL)
-	res, err := http.Post(u.String(), "application/x-www-form-urlencoded", bytes.NewBufferString(data.Encode()))
+	data.Set("redirect_uri", AppConfig.Auth.Redirect)
+	data.Set("client_id", ClientID)
+	data.Set("client_secret", ClientSecret)
+	u := "https://accounts.spotify.com/api/token"
+	res, err := http.Post(u, "application/x-www-form-urlencoded", bytes.NewBufferString(data.Encode()))
 	if err != nil {
 		return nil, err
 	}
-	var tr token
+	defer res.Body.Close()
+	var tr Token
 	if err := json.NewDecoder(res.Body).Decode(&tr); err != nil {
 		return nil, err
 	}
@@ -51,26 +40,30 @@ func getAuthToken(r *http.Request, originalState string) (*token, error) {
 
 // Callback : save access token and redirect to index
 func Callback(w http.ResponseWriter, r *http.Request) {
-	state, err := r.Cookie(authStateCookieName)
+	originalState, err := ReadEncryptedCookie(r, SecureStateCookie, AppConfig.Cookie.State)
 	if err != nil {
 		// error header
 		fmt.Println(err)
 		return
 	}
-	ClearCookie(w, authStateCookieName)
-	token, err := getAuthToken(r, state.Value)
+	newState := r.URL.Query().Get("state")
+	if newState != originalState {
+		// error header
+		fmt.Println("new state != original state")
+		return
+	}
+	token, err := getAuthToken(r)
 	if err != nil {
 		// error header
 		fmt.Println(err)
 		return
 	}
-	accessTokenExpiry := time.Now().Add(time.Duration(token.ExpiresIn) * time.Second).Format(time.RFC1123)
-	instantExpiry := time.Now().Add(1 * time.Second)
-	accessTokenCookie := CreateCookie(accessTokenCookieName, token.AccessToken, instantExpiry, false)
-	refreshTokenCookie := CreateCookie(refreshTokenCookieName, token.RefreshToken, instantExpiry, false)
-	tokenExpiryCookie := CreateCookie(tokenExpiryCookieName, accessTokenExpiry, instantExpiry, false)
-	http.SetCookie(w, accessTokenCookie)
-	http.SetCookie(w, refreshTokenCookie)
-	http.SetCookie(w, tokenExpiryCookie)
-	http.Redirect(w, r, appURL, 302)
+	ClearEncryptedCookie(w, SecureStateCookie, AppConfig.Cookie.State)
+	tokenExpiry := time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
+	yearExpiry := time.Now().Add(365 * 24 * time.Hour)
+	accessCookie, _ := CreateEncryptedCookie(SecureAccessTokenCookie, AppConfig.Cookie.AccessToken, token.AccessToken, tokenExpiry)
+	refreshCookie, _ := CreateEncryptedCookie(SecureRefreshTokenCookie, AppConfig.Cookie.RefreshToken, token.RefreshToken, yearExpiry)
+	http.SetCookie(w, accessCookie)
+	http.SetCookie(w, refreshCookie)
+	http.Redirect(w, r, AppConfig.AppURL, 302)
 }

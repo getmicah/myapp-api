@@ -8,25 +8,23 @@ import (
 // AppConfig : global app properties
 type AppConfig struct {
 	Auth struct {
-		AuthorizeURL string   `json:"authorizeURL"`
-		TokenURL     string   `json:"tokenURL"`
-		Redirect     string   `json:"redirect"`
-		Scope        []string `json:"scope"`
+		Redirect string   `json:"redirect"`
+		Scope    []string `json:"scope"`
 	} `json:"auth"`
 	Cookie struct {
-		SpotifyAccessToken  string `json:"spotifyAccessToken"`
-		SpotifyAuthState    string `json:"spotifyAuthState"`
-		SpotifyRefreshToken string `json:"spotifyRefreshToken"`
-		SpotifyTokenExpiry  string `json:"spotifyTokenExpiry"`
+		State        string `json:"state"`
+		AccessToken  string `json:"accessToken"`
+		RefreshToken string `json:"refreshToken"`
 	} `json:"cookie"`
 	Env struct {
 		SpotifyID     string `json:"spotifyID"`
 		SpotifySecret string `json:"spotifySecret"`
 	}
-	Path   string `json:"path"`
-	Port   int    `json:"port"`
-	APIURL string `json:"apiURL"`
-	AppURL string `json:"appURL"`
+	Path       string `json:"path"`
+	Port       int    `json:"port"`
+	APIURL     string `json:"apiURL"`
+	AppURL     string `json:"appURL"`
+	Production bool   `json:"production"`
 }
 
 // Get : open json file and return config

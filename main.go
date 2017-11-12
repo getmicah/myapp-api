@@ -12,13 +12,21 @@ import (
 var AppConfig = config.Get("./config/config.json")
 
 func main() {
+	// router
 	mux := http.NewServeMux()
-	mux.HandleFunc("/login", controllers.Login)
-	mux.HandleFunc("/callback", controllers.Callback)
+	// route /auth
+	mux.HandleFunc("/auth/login", controllers.Login)
+	mux.HandleFunc("/auth/callback", controllers.Callback)
+	// route /me
+	mux.HandleFunc("/me", func(w http.ResponseWriter, r *http.Request) {
+		controllers.Get(w, r, "/me")
+	})
+	// middleware
 	c := cors.New(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:8080"},
 		AllowCredentials: true,
 	})
-	handler := c.Handler(mux)
-	http.ListenAndServe(":3000", handler)
+	app := c.Handler(mux)
+	// Go!
+	http.ListenAndServe(":3000", app)
 }
