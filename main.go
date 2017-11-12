@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/rand"
-	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"io/ioutil"
@@ -10,7 +9,7 @@ import (
 	"net/http"
 	"os"
 
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/boltdb/bolt"
 	"github.com/rs/cors"
 )
 
@@ -28,7 +27,7 @@ func main() {
 	}
 
 	// database
-	db, err := sql.Open("mysql", "user:password@tcp(127.0.0.1:3306)/hello")
+	db, err := bolt.Open("bolt.db", 0600, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -69,16 +68,24 @@ func main() {
 		appURL:             config.AppURL,
 	})
 	mux.Handle("/me", &MeHandler{
-		spotifyEndpoint:   "/me",
-		accessTokenCookie: accessTokenCookie,
+		spotifyEndpoint:    "/me",
+		accessTokenCookie:  accessTokenCookie,
+		refreshTokenCookie: refreshTokenCookie,
+		tokenExpiryCookie:  tokenExpiryCookie,
+		clientID:           clientID,
+		clientSecret:       clientSecret,
+		timeLayout:         timeLayout,
 	})
+	mux.Handle("/station", &StationHandler{})
+
+	// middleware
 	c := cors.New(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:8080"},
 		AllowCredentials: true,
 	})
+	app := c.Handler(mux)
 
 	// Go!
-	app := c.Handler(mux)
 	http.ListenAndServe(":3000", app)
 }
 

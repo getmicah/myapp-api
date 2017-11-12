@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,11 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+)
+
+var (
+	// set default timeout for http.Client
+	defaultTimeout = time.Second * 10
 )
 
 // Token : oauth2 token
@@ -26,14 +32,9 @@ type ErrorResponse struct {
 	Message string `json:"message"`
 }
 
-// GetSpotify : make a GET request to Spotify API
-func GetSpotify(w http.ResponseWriter, r *http.Request, endpoint string, accessTokenCookie CookieID) {
-	accessToken, err := ReadCookie(r, accessTokenCookie)
-	if err != nil {
-		SendError(w, http.StatusUnauthorized, "Invalid access_token")
-		return
-	}
-	client := &http.Client{}
+// SpotifyGet : make a GET request to Spotify API
+func SpotifyGet(w http.ResponseWriter, r *http.Request, endpoint string, accessToken string) {
+	client := &http.Client{Timeout: defaultTimeout}
 	u := fmt.Sprintf("https://api.spotify.com/v1%s", endpoint)
 	req, err := http.NewRequest("GET", u, nil)
 	if err != nil {
@@ -58,6 +59,33 @@ func GetSpotify(w http.ResponseWriter, r *http.Request, endpoint string, accessT
 	w.Write(body)
 }
 
+// SpotifyAuthPost : Make a POST request to Spotify accounts API and receive a token
+func SpotifyAuthPost(r *http.Request, body url.Values, clientID string, clientSecret string) (*Token, error) {
+	client := &http.Client{Timeout: defaultTimeout}
+	u := "https://accounts.spotify.com/api/token"
+	req, err := http.NewRequest("POST", u, bytes.NewBufferString(body.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	bearer := fmt.Sprintf("%s:%s", clientID, clientSecret)
+	secret := base64.StdEncoding.EncodeToString([]byte(bearer))
+	req.Header.Add("Authorization", fmt.Sprintf("Basic %s", secret))
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, errors.New(res.Status)
+	}
+	var tr Token
+	if err := json.NewDecoder(res.Body).Decode(&tr); err != nil {
+		return nil, err
+	}
+	return &tr, nil
+}
+
 // SendError : send and error response back the the user
 func SendError(w http.ResponseWriter, code int, message string) {
 	var e ErrorResponse
@@ -69,60 +97,41 @@ func SendError(w http.ResponseWriter, code int, message string) {
 	w.Write(body)
 }
 
-// RequestNewAccessToken : ask Spotify for a new access_token
-func RequestNewAccessToken(r *http.Request, refreshToken string, clientID string, clientSecret string) (*Token, error) {
-	data := url.Values{}
-	data.Set("grant_type", "refresh_token")
-	data.Set("refresh_token", refreshToken)
-	data.Set("client_id", clientID)
-	data.Set("client_secret", clientSecret)
-	u := "https://accounts.spotify.com/api/token"
-	res, err := http.Post(u, "application/x-www-form-urlencoded", bytes.NewBufferString(data.Encode()))
+// RequestNewOAuthToken : ask Spotify for a new oauth token
+func RequestNewOAuthToken(r *http.Request, refreshToken string, clientID string, clientSecret string) (*Token, error) {
+	body := url.Values{}
+	body.Set("grant_type", "refresh_token")
+	body.Set("refresh_token", refreshToken)
+	token, err := SpotifyAuthPost(r, body, clientID, clientSecret)
 	if err != nil {
 		return nil, err
 	}
-	var tr Token
-	if err := json.NewDecoder(res.Body).Decode(&tr); err != nil {
-		return nil, err
-	}
-	return &tr, nil
+	return token, nil
 }
 
-// GetAuthToken : get Spotify oauth2 token
-func GetAuthToken(r *http.Request, redirect string, clientID string, clientSecret string) (*Token, error) {
-	authErr := r.URL.Query().Get("error")
-	if authErr != "" {
-		return nil, errors.New(authErr)
-	}
-	code := r.URL.Query().Get("code")
-	if code == "" {
-		return nil, errors.New("invalid code")
-	}
-	data := url.Values{}
-	data.Set("grant_type", "authorization_code")
-	data.Set("code", code)
-	data.Set("redirect_uri", redirect)
-	data.Set("client_id", clientID)
-	data.Set("client_secret", clientSecret)
-	u := "https://accounts.spotify.com/api/token"
-	res, err := http.Post(u, "application/x-www-form-urlencoded", bytes.NewBufferString(data.Encode()))
+// RequestOAuthToken : ask Spotify for an oauth token
+func RequestOAuthToken(r *http.Request, code string, redirectURI string, clientID string, clientSecret string) (*Token, error) {
+	body := url.Values{}
+	body.Set("grant_type", "authorization_code")
+	body.Set("code", code)
+	body.Set("redirect_uri", redirectURI)
+	token, err := SpotifyAuthPost(r, body, clientID, clientSecret)
 	if err != nil {
 		return nil, err
 	}
-	defer res.Body.Close()
-	var tr Token
-	if err := json.NewDecoder(res.Body).Decode(&tr); err != nil {
-		return nil, err
-	}
-	return &tr, nil
+	return token, nil
 }
 
 // LoadAccessToken : load acces token from cookies
-func LoadAccessToken(w http.ResponseWriter, r *http.Request, accessTokenCookie CookieID, tokenExpiryCookie CookieID, refreshToken string, clientID string, clientSecret string, timeLayout string) (string, error) {
+func LoadAccessToken(w http.ResponseWriter, r *http.Request, accessTokenCookie CookieID, refreshTokenCookie CookieID, tokenExpiryCookie CookieID, clientID string, clientSecret string, timeLayout string) (string, error) {
+	refreshToken, err := ReadCookie(r, refreshTokenCookie)
+	if err != nil {
+		return "", err
+	}
 	accessToken, err := ReadCookie(r, accessTokenCookie)
 	if err != nil {
 		if err.Error() == "timed_out" {
-			token, err := RequestNewAccessToken(r, refreshToken, clientID, clientSecret)
+			token, err := RequestNewOAuthToken(r, refreshToken, clientID, clientSecret)
 			if err != nil {
 				return "", err
 			}
