@@ -16,6 +16,7 @@ func main() {
 	mux := http.NewServeMux()
 	// route /auth
 	mux.HandleFunc("/auth/login", controllers.Login)
+	mux.HandleFunc("/auth/logout", controllers.Logout)
 	mux.HandleFunc("/auth/callback", controllers.Callback)
 	// route /me
 	mux.HandleFunc("/me", func(w http.ResponseWriter, r *http.Request) {

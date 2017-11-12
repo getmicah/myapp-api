@@ -42,6 +42,12 @@ type Token struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
+// ErrorResponse : http error response
+type ErrorResponse struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
 // GenerateRandomString : create a random string with n length
 func GenerateRandomString(n int) string {
 	b := GenerateRandomBytes(n)
@@ -150,33 +156,45 @@ func LoadAccessToken(w http.ResponseWriter, r *http.Request) (string, error) {
 	return accessToken, nil
 }
 
+// SendError : send ErrorResponse to user
+func SendError(w http.ResponseWriter, code int, message string) {
+	var e ErrorResponse
+	e.Code = code
+	e.Message = message
+	body, _ := json.Marshal(e)
+	w.WriteHeader(e.Code)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(body)
+}
+
 // Get : GET API endpoint
 func Get(w http.ResponseWriter, r *http.Request, endpoint string) {
 	accessToken, err := LoadAccessToken(w, r)
 	if err != nil {
-		fmt.Println(err)
+		SendError(w, http.StatusUnauthorized, "Invalid access_token")
 		return
 	}
 	client := &http.Client{}
 	u := fmt.Sprintf("https://api.spotify.com/v1%s", endpoint)
 	req, err := http.NewRequest("GET", u, nil)
 	if err != nil {
-		fmt.Println(err)
+		SendError(w, http.StatusInternalServerError, "Invalid access_token")
 		return
 	}
 	bearer := fmt.Sprintf("Bearer %s", accessToken)
 	req.Header.Set("Authorization", bearer)
 	res, err := client.Do(req)
 	if err != nil {
-		fmt.Println(err)
+		SendError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	defer res.Body.Close()
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		fmt.Println(err)
+		SendError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(body)
 }
