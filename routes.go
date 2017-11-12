@@ -8,20 +8,10 @@ import (
 	"time"
 )
 
-// MeHandler : /me
-type MeHandler struct {
-	spotifyEndpoint   string
-	accessTokenCookie CookieID
-}
-
-func (h *MeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	GetSpotify(w, r, h.spotifyEndpoint, h.accessTokenCookie)
-}
-
 // LoginHandler : /auth/login
 type LoginHandler struct {
 	clientID        string
-	redirect        string
+	redirectURI     string
 	scope           []string
 	authStateCookie CookieID
 }
@@ -38,7 +28,7 @@ func (h *LoginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	api := "https://accounts.spotify.com/authorize/"
 	authURL := fmt.Sprintf(
 		"%s?client_id=%s&response_type=%s&redirect_uri=%s&scope=%s&state=%s",
-		api, h.clientID, "code", url.PathEscape(h.redirect), strings.Join(h.scope[:], "%20"), state,
+		api, h.clientID, "code", url.PathEscape(h.redirectURI), strings.Join(h.scope[:], "%20"), state,
 	)
 	http.Redirect(w, r, authURL, 302)
 }
@@ -68,7 +58,7 @@ type CallbackHandler struct {
 	clientID           string
 	clientSecret       string
 	timeLayout         string
-	redirect           string
+	redirectURI        string
 	appURL             string
 }
 
@@ -85,7 +75,7 @@ func (h *CallbackHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("new state != original state")
 		return
 	}
-	token, err := GetAuthToken(r, h.redirect, h.clientID, h.clientSecret)
+	token, err := GetAuthToken(r, h.redirectURI, h.clientID, h.clientSecret)
 	if err != nil {
 		// error header
 		fmt.Println(err)
@@ -99,4 +89,14 @@ func (h *CallbackHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	WriteCookie(w, h.refreshTokenCookie, token.RefreshToken, yearExpiry)
 	WriteCookie(w, h.tokenExpiryCookie, tokenExpiryValue, yearExpiry)
 	http.Redirect(w, r, h.appURL, 302)
+}
+
+// MeHandler : /me
+type MeHandler struct {
+	spotifyEndpoint   string
+	accessTokenCookie CookieID
+}
+
+func (h *MeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	GetSpotify(w, r, h.spotifyEndpoint, h.accessTokenCookie)
 }

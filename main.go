@@ -2,19 +2,37 @@ package main
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/base64"
+	"encoding/json"
+	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/rs/cors"
 )
 
 func main() {
-	// env
-	config := GetConfig("./config/config.json")
-	clientID := os.Getenv(config.Env.SpotifyID)
-	clientSecret := os.Getenv(config.Env.SpotifySecret)
+	// config
+	config := getConfig("./config.json")
+	clientID := os.Getenv("SPOTIFY_CLIENT_ID")
+	clientSecret := os.Getenv("SPOTIFY_CLIENT_SECRET")
 	timeLayout := "2006-01-02 15:04:05.999999999 -0700 MST"
+	scope := []string{
+		"user-modify-playback-state",
+		"user-read-currently-playing",
+		"user-read-playback-state",
+		"user-read-recently-played",
+	}
+
+	// database
+	db, err := sql.Open("mysql", "user:password@tcp(127.0.0.1:3306)/hello")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
 
 	// cookies
 	authStateCookie := GenerateCookie("auth_state")
@@ -26,8 +44,8 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/auth/login", &LoginHandler{
 		clientID:        clientID,
-		redirect:        config.Auth.Redirect,
-		scope:           config.Auth.Scope,
+		redirectURI:     config.RedirectURI,
+		scope:           scope,
 		authStateCookie: authStateCookie,
 	})
 	mux.Handle("/auth/logout", &LogoutHandler{
@@ -47,7 +65,7 @@ func main() {
 		clientID:           clientID,
 		clientSecret:       clientSecret,
 		timeLayout:         timeLayout,
-		redirect:           config.Auth.Redirect,
+		redirectURI:        config.RedirectURI,
 		appURL:             config.AppURL,
 	})
 	mux.Handle("/me", &MeHandler{
@@ -78,4 +96,20 @@ func GenerateRandomBytes(n int) []byte {
 		panic(err)
 	}
 	return b
+}
+
+type config struct {
+	APIURL      string `json:"apiURL"`
+	AppURL      string `json:"appURL"`
+	RedirectURI string `json:"redirectURI"`
+}
+
+func getConfig(path string) config {
+	file, err := ioutil.ReadFile(path)
+	if err != nil {
+		panic(err)
+	}
+	var c config
+	json.Unmarshal(file, &c)
+	return c
 }
