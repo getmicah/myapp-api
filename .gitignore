@@ -1,6 +1,7 @@
 # My ignores
 .DS_Store
 myapp-api
+*.db
 
 # Binaries for programs and plugins
 *.exe
