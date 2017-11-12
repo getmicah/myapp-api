@@ -8,11 +8,6 @@
 			"user-read-recently-played"
 		]
 	},
-	"cookie": {
-		"state": "state",
-		"accessToken": "access_token",
-		"refreshToken": "refresh_token"
-	},
 	"env": {
 		"spotifyID": "SPOTIFY_ID",
 		"spotifySecret": "SPOTIFY_SECRET"

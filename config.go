@@ -1,4 +1,4 @@
-package config
+package main
 
 import (
 	"encoding/json"
@@ -11,11 +11,6 @@ type AppConfig struct {
 		Redirect string   `json:"redirect"`
 		Scope    []string `json:"scope"`
 	} `json:"auth"`
-	Cookie struct {
-		State        string `json:"state"`
-		AccessToken  string `json:"accessToken"`
-		RefreshToken string `json:"refreshToken"`
-	} `json:"cookie"`
 	Env struct {
 		SpotifyID     string `json:"spotifyID"`
 		SpotifySecret string `json:"spotifySecret"`
@@ -27,8 +22,8 @@ type AppConfig struct {
 	Production bool   `json:"production"`
 }
 
-// Get : open json file and return config
-func Get(path string) AppConfig {
+// GetConfig : open json file and return config
+func GetConfig(path string) AppConfig {
 	file, err := ioutil.ReadFile(path)
 	if err != nil {
 		panic(err)
