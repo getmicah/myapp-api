@@ -6,15 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"time"
-)
-
-var (
-	// set default timeout for http.Client
-	defaultTimeout = time.Second * 10
 )
 
 // Token : oauth2 token
@@ -26,42 +20,63 @@ type Token struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
+// User : spotify /me response
+type User struct {
+	ID string `json:"id"`
+}
+
+// Station : api /station response
+type Station struct {
+	Active bool `json:"active"`
+}
+
 // ErrorResponse : http error response
 type ErrorResponse struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 }
 
+// SendError : send an error response back the the user
+func SendError(w http.ResponseWriter, code int, message string) {
+	var e ErrorResponse
+	e.Code = code
+	e.Message = message
+	body, err := json.Marshal(e)
+	if err != nil {
+		SendError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(e.Code)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(body)
+}
+
+// SendMethodError : send a method error
+func SendMethodError(w http.ResponseWriter, method string) {
+	msg := fmt.Sprintf("Endpoint doesn't support %s request", method)
+	SendError(w, http.StatusBadRequest, msg)
+}
+
 // SpotifyGet : make a GET request to Spotify API
-func SpotifyGet(w http.ResponseWriter, r *http.Request, endpoint string, accessToken string) {
-	client := &http.Client{Timeout: defaultTimeout}
+func SpotifyGet(r *http.Request, endpoint string, accessToken string) (*http.Response, error) {
+	client := &http.Client{Timeout: ClientTimeout}
 	u := fmt.Sprintf("https://api.spotify.com/v1%s", endpoint)
 	req, err := http.NewRequest("GET", u, nil)
 	if err != nil {
-		SendError(w, http.StatusInternalServerError, "Invalid access_token")
-		return
+		return nil, errors.New("Invalid access_token")
 	}
 	bearer := fmt.Sprintf("Bearer %s", accessToken)
 	req.Header.Set("Authorization", bearer)
 	res, err := client.Do(req)
 	if err != nil {
-		SendError(w, http.StatusInternalServerError, err.Error())
-		return
+		return nil, err
 	}
-	defer res.Body.Close()
-	body, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		SendError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(body)
+	return res, nil
 }
 
 // SpotifyAuthPost : Make a POST request to Spotify accounts API and receive a token
 func SpotifyAuthPost(r *http.Request, body url.Values, clientID string, clientSecret string) (*Token, error) {
-	client := &http.Client{Timeout: defaultTimeout}
+	client := &http.Client{Timeout: ClientTimeout}
 	u := "https://accounts.spotify.com/api/token"
 	req, err := http.NewRequest("POST", u, bytes.NewBufferString(body.Encode()))
 	if err != nil {
@@ -84,17 +99,6 @@ func SpotifyAuthPost(r *http.Request, body url.Values, clientID string, clientSe
 		return nil, err
 	}
 	return &tr, nil
-}
-
-// SendError : send and error response back the the user
-func SendError(w http.ResponseWriter, code int, message string) {
-	var e ErrorResponse
-	e.Code = code
-	e.Message = message
-	body, _ := json.Marshal(e)
-	w.WriteHeader(e.Code)
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(body)
 }
 
 // RequestNewOAuthToken : ask Spotify for a new oauth token
@@ -123,7 +127,7 @@ func RequestOAuthToken(r *http.Request, code string, redirectURI string, clientI
 }
 
 // LoadAccessToken : load acces token from cookies
-func LoadAccessToken(w http.ResponseWriter, r *http.Request, accessTokenCookie CookieID, refreshTokenCookie CookieID, tokenExpiryCookie CookieID, clientID string, clientSecret string, timeLayout string) (string, error) {
+func LoadAccessToken(w http.ResponseWriter, r *http.Request, accessTokenCookie CookieID, refreshTokenCookie CookieID, tokenExpiryCookie CookieID, clientID string, clientSecret string) (string, error) {
 	refreshToken, err := ReadCookie(r, refreshTokenCookie)
 	if err != nil {
 		return "", err
@@ -135,7 +139,7 @@ func LoadAccessToken(w http.ResponseWriter, r *http.Request, accessTokenCookie C
 			if err != nil {
 				return "", err
 			}
-			tokenExpiryValue := time.Now().Add(time.Duration(token.ExpiresIn) * time.Second).Format(timeLayout)
+			tokenExpiryValue := time.Now().Add(time.Duration(token.ExpiresIn) * time.Second).Format(TimeLayout)
 			yearExpiry := time.Now().Add(365 * 24 * time.Hour)
 			if err := WriteCookie(w, tokenExpiryCookie, tokenExpiryValue, yearExpiry); err != nil {
 				return "", err

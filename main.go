@@ -4,13 +4,26 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/boltdb/bolt"
 	"github.com/rs/cors"
+)
+
+const (
+	// ClientTimeout : timeout for http.Client
+	ClientTimeout = time.Second * 10
+	// TimeLayout : format for converting time to and from string
+	TimeLayout = "2006-01-02 15:04:05.999999999 -0700 MST"
+	// StationsBucket : name of boltdb "Stations" bucket
+	StationsBucket = "Stations"
+	// StationActive : station active value
+	StationActive = "on"
 )
 
 func main() {
@@ -18,12 +31,12 @@ func main() {
 	config := getConfig("./config.json")
 	clientID := os.Getenv("SPOTIFY_CLIENT_ID")
 	clientSecret := os.Getenv("SPOTIFY_CLIENT_SECRET")
-	timeLayout := "2006-01-02 15:04:05.999999999 -0700 MST"
 	scope := []string{
 		"user-modify-playback-state",
 		"user-read-currently-playing",
 		"user-read-playback-state",
 		"user-read-recently-played",
+		"user-follow-read",
 	}
 
 	// database
@@ -32,6 +45,13 @@ func main() {
 		log.Fatal(err)
 	}
 	defer db.Close()
+	db.Update(func(tx *bolt.Tx) error {
+		_, err := tx.CreateBucketIfNotExists([]byte(StationsBucket))
+		if err != nil {
+			return fmt.Errorf("create bucket: %s", err)
+		}
+		return nil
+	})
 
 	// cookies
 	authStateCookie := GenerateCookie("auth_state")
@@ -63,7 +83,6 @@ func main() {
 		tokenExpiryCookie:  tokenExpiryCookie,
 		clientID:           clientID,
 		clientSecret:       clientSecret,
-		timeLayout:         timeLayout,
 		redirectURI:        config.RedirectURI,
 		appURL:             config.AppURL,
 	})
@@ -74,14 +93,24 @@ func main() {
 		tokenExpiryCookie:  tokenExpiryCookie,
 		clientID:           clientID,
 		clientSecret:       clientSecret,
-		timeLayout:         timeLayout,
 	})
-	mux.Handle("/station", &StationHandler{})
+	mux.Handle("/station", &StationHandler{
+		authStateCookie:    authStateCookie,
+		accessTokenCookie:  accessTokenCookie,
+		refreshTokenCookie: refreshTokenCookie,
+		tokenExpiryCookie:  tokenExpiryCookie,
+		clientID:           clientID,
+		clientSecret:       clientSecret,
+		redirectURI:        config.RedirectURI,
+		appURL:             config.AppURL,
+		db:                 db,
+	})
 
 	// middleware
 	c := cors.New(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:8080"},
 		AllowCredentials: true,
+		AllowedMethods:   []string{"GET", "POST", "DELETE"},
 	})
 	app := c.Handler(mux)
 

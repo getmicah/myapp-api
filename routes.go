@@ -1,11 +1,15 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/boltdb/bolt"
 )
 
 // LoginHandler : GET /auth/login
@@ -21,8 +25,7 @@ func (h *LoginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "GET":
 		loginGet(w, r, h)
 	default:
-		msg := fmt.Sprintf("Endpoint doesn't support %s request", r.Method)
-		SendError(w, http.StatusBadRequest, msg)
+		SendMethodError(w, r.Method)
 	}
 }
 
@@ -52,8 +55,7 @@ func (h *LogoutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "GET":
 		logoutGet(w, r, h)
 	default:
-		msg := fmt.Sprintf("Endpoint doesn't support %s request", r.Method)
-		SendError(w, http.StatusBadRequest, msg)
+		SendMethodError(w, r.Method)
 	}
 }
 
@@ -75,7 +77,6 @@ type CallbackHandler struct {
 	tokenExpiryCookie  CookieID
 	clientID           string
 	clientSecret       string
-	timeLayout         string
 	redirectURI        string
 	appURL             string
 }
@@ -85,8 +86,7 @@ func (h *CallbackHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "GET":
 		callbackGet(w, r, h)
 	default:
-		msg := fmt.Sprintf("Endpoint doesn't support %s request", r.Method)
-		SendError(w, http.StatusBadRequest, msg)
+		SendMethodError(w, r.Method)
 	}
 }
 
@@ -114,7 +114,7 @@ func callbackGet(w http.ResponseWriter, r *http.Request, h *CallbackHandler) {
 	}
 	accessTokenExpiry := time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
 	yearExpiry := time.Now().Add(365 * 24 * time.Hour)
-	tokenExpiryValue := accessTokenExpiry.Format(h.timeLayout)
+	tokenExpiryValue := accessTokenExpiry.Format(TimeLayout)
 	WriteCookie(w, h.accessTokenCookie, token.AccessToken, accessTokenExpiry)
 	WriteCookie(w, h.refreshTokenCookie, token.RefreshToken, yearExpiry)
 	WriteCookie(w, h.tokenExpiryCookie, tokenExpiryValue, yearExpiry)
@@ -130,7 +130,6 @@ type MeHandler struct {
 	tokenExpiryCookie  CookieID
 	clientID           string
 	clientSecret       string
-	timeLayout         string
 }
 
 func (h *MeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -138,37 +137,140 @@ func (h *MeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "GET":
 		meGet(w, r, h)
 	default:
-		msg := fmt.Sprintf("Endpoint doesn't support %s request", r.Method)
-		SendError(w, http.StatusBadRequest, msg)
+		SendMethodError(w, r.Method)
 	}
 
 }
 
 func meGet(w http.ResponseWriter, r *http.Request, h *MeHandler) {
-	accessToken, err := LoadAccessToken(w, r, h.accessTokenCookie, h.refreshTokenCookie, h.tokenExpiryCookie, h.clientID, h.clientSecret, h.timeLayout)
+	accessToken, err := LoadAccessToken(w, r, h.accessTokenCookie, h.refreshTokenCookie, h.tokenExpiryCookie, h.clientID, h.clientSecret)
 	if err != nil {
 		SendError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
-	SpotifyGet(w, r, h.spotifyEndpoint, accessToken)
+	res, err := SpotifyGet(r, h.spotifyEndpoint, accessToken)
+	if err != nil {
+		SendError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	defer res.Body.Close()
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		SendError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(body)
 }
 
 // StationHandler : POST /station
 type StationHandler struct {
+	authStateCookie    CookieID
+	accessTokenCookie  CookieID
+	refreshTokenCookie CookieID
+	tokenExpiryCookie  CookieID
+	clientID           string
+	clientSecret       string
+	redirectURI        string
+	appURL             string
+	db                 *bolt.DB
 }
 
 func (h *StationHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
-		// Serve the resource.
+		stationGet(w, r, h)
 	case "POST":
-		// Create a new record.
-	case "PUT":
-		// Update an existing record.
+		stationPost(w, r, h)
 	case "DELETE":
-		// Remove the record.
+		stationDelete(w, r, h)
 	default:
-		msg := fmt.Sprintf("Endpoint doesn't support %s request", r.Method)
-		SendError(w, http.StatusBadRequest, msg)
+		SendMethodError(w, r.Method)
 	}
+}
+
+func stationGet(w http.ResponseWriter, r *http.Request, h *StationHandler) {
+	userID := r.URL.Query().Get("id")
+	status, dbErr := GetStationStatus(h.db, userID)
+	if dbErr != nil {
+		SendError(w, http.StatusInternalServerError, dbErr.Error())
+		return
+	}
+	var s Station
+	s.Active = status
+	body, err := json.Marshal(s)
+	if err != nil {
+		SendError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(body)
+}
+
+func stationPost(w http.ResponseWriter, r *http.Request, h *StationHandler) {
+	accessToken, err := LoadAccessToken(w, r, h.accessTokenCookie, h.refreshTokenCookie, h.tokenExpiryCookie, h.clientID, h.clientSecret)
+	if err != nil {
+		SendError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	res, err := SpotifyGet(r, "/me", accessToken)
+	if err != nil {
+		SendError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	var u User
+	if err := json.NewDecoder(res.Body).Decode(&u); err != nil {
+		SendError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	dbErr := TurnOnStation(h.db, u.ID)
+	if dbErr != nil {
+		SendError(w, http.StatusInternalServerError, dbErr.Error())
+		return
+	}
+	var s Station
+	s.Active = true
+	body, err := json.Marshal(s)
+	if err != nil {
+		SendError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(body)
+}
+
+func stationDelete(w http.ResponseWriter, r *http.Request, h *StationHandler) {
+	accessToken, err := LoadAccessToken(w, r, h.accessTokenCookie, h.refreshTokenCookie, h.tokenExpiryCookie, h.clientID, h.clientSecret)
+	if err != nil {
+		SendError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	res, err := SpotifyGet(r, "/me", accessToken)
+	if err != nil {
+		SendError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	var u User
+	if err := json.NewDecoder(res.Body).Decode(&u); err != nil {
+		SendError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	dbErr := TurnOffStation(h.db, u.ID)
+	if dbErr != nil {
+		SendError(w, http.StatusInternalServerError, dbErr.Error())
+		return
+	}
+	var s Station
+	s.Active = false
+	body, err := json.Marshal(s)
+	if err != nil {
+		SendError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(body)
 }
