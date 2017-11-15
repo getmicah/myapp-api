@@ -4,14 +4,11 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"time"
 
-	"github.com/boltdb/bolt"
 	"github.com/rs/cors"
 )
 
@@ -20,10 +17,6 @@ const (
 	ClientTimeout = time.Second * 10
 	// TimeLayout : format for converting time to and from string
 	TimeLayout = "2006-01-02 15:04:05.999999999 -0700 MST"
-	// StationsBucket : name of boltdb "Stations" bucket
-	StationsBucket = "Stations"
-	// StationActive : station active value
-	StationActive = "on"
 )
 
 func main() {
@@ -32,26 +25,9 @@ func main() {
 	clientID := os.Getenv("SPOTIFY_CLIENT_ID")
 	clientSecret := os.Getenv("SPOTIFY_CLIENT_SECRET")
 	scope := []string{
-		"user-modify-playback-state",
-		"user-read-currently-playing",
-		"user-read-playback-state",
-		"user-read-recently-played",
-		"user-follow-read",
+		"user-top-read",
+		"playlist-modify-public",
 	}
-
-	// database
-	db, err := bolt.Open("bolt.db", 0600, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
-	db.Update(func(tx *bolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists([]byte(StationsBucket))
-		if err != nil {
-			return fmt.Errorf("create bucket: %s", err)
-		}
-		return nil
-	})
 
 	// cookies
 	authStateCookie := GenerateCookie("auth_state")
@@ -86,29 +62,52 @@ func main() {
 		redirectURI:        config.RedirectURI,
 		appURL:             config.AppURL,
 	})
-	mux.Handle("/me", &MeHandler{
-		spotifyEndpoint:    "/me",
+	mux.Handle("/auth", &AuthHandler{
 		accessTokenCookie:  accessTokenCookie,
 		refreshTokenCookie: refreshTokenCookie,
 		tokenExpiryCookie:  tokenExpiryCookie,
 		clientID:           clientID,
 		clientSecret:       clientSecret,
 	})
-	mux.Handle("/station", &StationHandler{
-		authStateCookie:    authStateCookie,
+	mux.Handle("/search", &SearchHandler{
 		accessTokenCookie:  accessTokenCookie,
 		refreshTokenCookie: refreshTokenCookie,
 		tokenExpiryCookie:  tokenExpiryCookie,
 		clientID:           clientID,
 		clientSecret:       clientSecret,
-		redirectURI:        config.RedirectURI,
-		appURL:             config.AppURL,
-		db:                 db,
+	})
+	mux.Handle("/artist", &ArtistHandler{
+		accessTokenCookie:  accessTokenCookie,
+		refreshTokenCookie: refreshTokenCookie,
+		tokenExpiryCookie:  tokenExpiryCookie,
+		clientID:           clientID,
+		clientSecret:       clientSecret,
+	})
+	mux.Handle("/track", &TrackHandler{
+		accessTokenCookie:  accessTokenCookie,
+		refreshTokenCookie: refreshTokenCookie,
+		tokenExpiryCookie:  tokenExpiryCookie,
+		clientID:           clientID,
+		clientSecret:       clientSecret,
+	})
+	mux.Handle("/rec", &RecHandler{
+		accessTokenCookie:  accessTokenCookie,
+		refreshTokenCookie: refreshTokenCookie,
+		tokenExpiryCookie:  tokenExpiryCookie,
+		clientID:           clientID,
+		clientSecret:       clientSecret,
+	})
+	mux.Handle("/playlist", &PlaylistHandler{
+		accessTokenCookie:  accessTokenCookie,
+		refreshTokenCookie: refreshTokenCookie,
+		tokenExpiryCookie:  tokenExpiryCookie,
+		clientID:           clientID,
+		clientSecret:       clientSecret,
 	})
 
 	// middleware
 	c := cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:8080"},
+		AllowedOrigins:   []string{config.AppURL},
 		AllowCredentials: true,
 		AllowedMethods:   []string{"GET", "POST", "DELETE"},
 	})

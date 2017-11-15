@@ -6,35 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
 )
-
-// Token : oauth2 token
-type Token struct {
-	AccessToken  string `json:"access_token"`
-	TokenType    string `json:"token_type"`
-	Scope        string `json:"scope"`
-	ExpiresIn    int    `json:"expires_in"`
-	RefreshToken string `json:"refresh_token"`
-}
-
-// User : spotify /me response
-type User struct {
-	ID string `json:"id"`
-}
-
-// Station : api /station response
-type Station struct {
-	Active bool `json:"active"`
-}
-
-// ErrorResponse : http error response
-type ErrorResponse struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
 
 // SendError : send an error response back the the user
 func SendError(w http.ResponseWriter, code int, message string) {
@@ -51,8 +27,8 @@ func SendError(w http.ResponseWriter, code int, message string) {
 	w.Write(body)
 }
 
-// SendMethodError : send a method error
-func SendMethodError(w http.ResponseWriter, method string) {
+// SendBadRequest : send a method error
+func SendBadRequest(w http.ResponseWriter, method string) {
 	msg := fmt.Sprintf("Endpoint doesn't support %s request", method)
 	SendError(w, http.StatusBadRequest, msg)
 }
@@ -71,10 +47,34 @@ func SpotifyGet(r *http.Request, endpoint string, accessToken string) (*http.Res
 	if err != nil {
 		return nil, err
 	}
+	if res.StatusCode != http.StatusOK {
+		return nil, errors.New(res.Status)
+	}
 	return res, nil
 }
 
-// SpotifyAuthPost : Make a POST request to Spotify accounts API and receive a token
+// SpotifyPost : make a POST request to Spotify API
+func SpotifyPost(r *http.Request, endpoint string, body io.Reader, accessToken string) (*http.Response, error) {
+	client := &http.Client{Timeout: ClientTimeout}
+	u := fmt.Sprintf("https://api.spotify.com/v1%s", endpoint)
+	req, err := http.NewRequest("POST", u, body)
+	if err != nil {
+		return nil, err
+	}
+	bearer := fmt.Sprintf("Bearer %s", accessToken)
+	req.Header.Set("Authorization", bearer)
+	req.Header.Add("Content-Type", "application/json")
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if !(res.StatusCode == http.StatusOK || res.StatusCode == http.StatusCreated) {
+		return nil, errors.New(res.Status)
+	}
+	return res, nil
+}
+
+// SpotifyAuthPost : make a POST request to Spotify accounts API and receive a token
 func SpotifyAuthPost(r *http.Request, body url.Values, clientID string, clientSecret string) (*Token, error) {
 	client := &http.Client{Timeout: ClientTimeout}
 	u := "https://accounts.spotify.com/api/token"
@@ -90,7 +90,6 @@ func SpotifyAuthPost(r *http.Request, body url.Values, clientID string, clientSe
 	if err != nil {
 		return nil, err
 	}
-	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		return nil, errors.New(res.Status)
 	}
@@ -134,7 +133,8 @@ func LoadAccessToken(w http.ResponseWriter, r *http.Request, accessTokenCookie C
 	}
 	accessToken, err := ReadCookie(r, accessTokenCookie)
 	if err != nil {
-		if err.Error() == "timed_out" {
+		if err.Error() == "expired" {
+			fmt.Println("REQUESTED NEW TOKEN :D")
 			token, err := RequestNewOAuthToken(r, refreshToken, clientID, clientSecret)
 			if err != nil {
 				return "", err

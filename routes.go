@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -8,11 +9,9 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
-	"github.com/boltdb/bolt"
 )
 
-// LoginHandler : GET /auth/login
+// LoginHandler : /auth/login
 type LoginHandler struct {
 	clientID        string
 	redirectURI     string
@@ -23,9 +22,10 @@ type LoginHandler struct {
 func (h *LoginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
+		fmt.Println("GET /login")
 		loginGet(w, r, h)
 	default:
-		SendMethodError(w, r.Method)
+		SendBadRequest(w, r.Method)
 	}
 }
 
@@ -44,32 +44,7 @@ func loginGet(w http.ResponseWriter, r *http.Request, h *LoginHandler) {
 	http.Redirect(w, r, authURL, 302)
 }
 
-// LogoutHandler : GET /auth/logout
-type LogoutHandler struct {
-	cookies []CookieID
-	appURL  string
-}
-
-func (h *LogoutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "GET":
-		logoutGet(w, r, h)
-	default:
-		SendMethodError(w, r.Method)
-	}
-}
-
-func logoutGet(w http.ResponseWriter, r *http.Request, h *LogoutHandler) {
-	for i := 0; i < len(h.cookies); i++ {
-		if err := ClearCookie(w, h.cookies[i]); err != nil {
-			SendError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-	}
-	http.Redirect(w, r, h.appURL, 302)
-}
-
-// CallbackHandler : GET /auth/callback
+// CallbackHandler : /auth/callback
 type CallbackHandler struct {
 	authStateCookie    CookieID
 	accessTokenCookie  CookieID
@@ -84,9 +59,10 @@ type CallbackHandler struct {
 func (h *CallbackHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
+		fmt.Println("GET /callback")
 		callbackGet(w, r, h)
 	default:
-		SendMethodError(w, r.Method)
+		SendBadRequest(w, r.Method)
 	}
 }
 
@@ -122,9 +98,34 @@ func callbackGet(w http.ResponseWriter, r *http.Request, h *CallbackHandler) {
 	http.Redirect(w, r, h.appURL, 302)
 }
 
-// MeHandler : GET /me
-type MeHandler struct {
-	spotifyEndpoint    string
+// LogoutHandler : /auth/logout
+type LogoutHandler struct {
+	cookies []CookieID
+	appURL  string
+}
+
+func (h *LogoutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "GET":
+		fmt.Println("GET /logout")
+		logoutGet(w, r, h)
+	default:
+		SendBadRequest(w, r.Method)
+	}
+}
+
+func logoutGet(w http.ResponseWriter, r *http.Request, h *LogoutHandler) {
+	for i := 0; i < len(h.cookies); i++ {
+		if err := ClearCookie(w, h.cookies[i]); err != nil {
+			SendError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	http.Redirect(w, r, h.appURL, 302)
+}
+
+// AuthHandler : /auth
+type AuthHandler struct {
 	accessTokenCookie  CookieID
 	refreshTokenCookie CookieID
 	tokenExpiryCookie  CookieID
@@ -132,28 +133,68 @@ type MeHandler struct {
 	clientSecret       string
 }
 
-func (h *MeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *AuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
-		meGet(w, r, h)
+		fmt.Println("GET /auth")
+		authGet(w, r, h)
 	default:
-		SendMethodError(w, r.Method)
+		SendBadRequest(w, r.Method)
+	}
+}
+
+func authGet(w http.ResponseWriter, r *http.Request, h *AuthHandler) {
+	_, err := LoadAccessToken(w, r, h.accessTokenCookie, h.refreshTokenCookie, h.tokenExpiryCookie, h.clientID, h.clientSecret)
+	if err != nil {
+		SendError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	status := AuthStatus{Authenticated: true}
+	body, err := json.Marshal(status)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(body)
+}
+
+// SearchHandler : /search
+type SearchHandler struct {
+	accessTokenCookie  CookieID
+	refreshTokenCookie CookieID
+	tokenExpiryCookie  CookieID
+	clientID           string
+	clientSecret       string
+}
+
+func (h *SearchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "GET":
+		fmt.Println("GET /search")
+		searchGet(w, r, h)
+	default:
+		SendBadRequest(w, r.Method)
 	}
 
 }
 
-func meGet(w http.ResponseWriter, r *http.Request, h *MeHandler) {
+func searchGet(w http.ResponseWriter, r *http.Request, h *SearchHandler) {
 	accessToken, err := LoadAccessToken(w, r, h.accessTokenCookie, h.refreshTokenCookie, h.tokenExpiryCookie, h.clientID, h.clientSecret)
 	if err != nil {
 		SendError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
-	res, err := SpotifyGet(r, h.spotifyEndpoint, accessToken)
+	q := r.URL.Query().Get("q")
+	searchType := r.URL.Query().Get("type")
+	limit := 5
+	api := fmt.Sprintf("/search?q=%s&type=%s&limit=%d&market=US", url.PathEscape(q), searchType, limit)
+	res, err := SpotifyGet(r, api, accessToken)
 	if err != nil {
-		SendError(w, http.StatusUnauthorized, err.Error())
+		SendError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	defer res.Body.Close()
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		SendError(w, http.StatusInternalServerError, err.Error())
@@ -164,42 +205,40 @@ func meGet(w http.ResponseWriter, r *http.Request, h *MeHandler) {
 	w.Write(body)
 }
 
-// StationHandler : POST /station
-type StationHandler struct {
-	authStateCookie    CookieID
+// ArtistHandler : /artist
+type ArtistHandler struct {
 	accessTokenCookie  CookieID
 	refreshTokenCookie CookieID
 	tokenExpiryCookie  CookieID
 	clientID           string
 	clientSecret       string
-	redirectURI        string
-	appURL             string
-	db                 *bolt.DB
 }
 
-func (h *StationHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *ArtistHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
-		stationGet(w, r, h)
-	case "POST":
-		stationPost(w, r, h)
-	case "DELETE":
-		stationDelete(w, r, h)
+		fmt.Println("GET /artist")
+		artistGet(w, r, h)
 	default:
-		SendMethodError(w, r.Method)
+		SendBadRequest(w, r.Method)
 	}
+
 }
 
-func stationGet(w http.ResponseWriter, r *http.Request, h *StationHandler) {
-	userID := r.URL.Query().Get("id")
-	status, dbErr := GetStationStatus(h.db, userID)
-	if dbErr != nil {
-		SendError(w, http.StatusInternalServerError, dbErr.Error())
+func artistGet(w http.ResponseWriter, r *http.Request, h *ArtistHandler) {
+	accessToken, err := LoadAccessToken(w, r, h.accessTokenCookie, h.refreshTokenCookie, h.tokenExpiryCookie, h.clientID, h.clientSecret)
+	if err != nil {
+		SendError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
-	var s Station
-	s.Active = status
-	body, err := json.Marshal(s)
+	id := r.URL.Query().Get("id")
+	endpoint := fmt.Sprintf("/artists/%s", id)
+	res, err := SpotifyGet(r, endpoint, accessToken)
+	if err != nil {
+		SendError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		SendError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -209,30 +248,40 @@ func stationGet(w http.ResponseWriter, r *http.Request, h *StationHandler) {
 	w.Write(body)
 }
 
-func stationPost(w http.ResponseWriter, r *http.Request, h *StationHandler) {
+// TrackHandler : /track
+type TrackHandler struct {
+	accessTokenCookie  CookieID
+	refreshTokenCookie CookieID
+	tokenExpiryCookie  CookieID
+	clientID           string
+	clientSecret       string
+}
+
+func (h *TrackHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "GET":
+		fmt.Println("GET /track")
+		trackGet(w, r, h)
+	default:
+		SendBadRequest(w, r.Method)
+	}
+
+}
+
+func trackGet(w http.ResponseWriter, r *http.Request, h *TrackHandler) {
 	accessToken, err := LoadAccessToken(w, r, h.accessTokenCookie, h.refreshTokenCookie, h.tokenExpiryCookie, h.clientID, h.clientSecret)
 	if err != nil {
 		SendError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
-	res, err := SpotifyGet(r, "/me", accessToken)
+	id := r.URL.Query().Get("id")
+	endpoint := fmt.Sprintf("/tracks/%s", id)
+	res, err := SpotifyGet(r, endpoint, accessToken)
 	if err != nil {
-		SendError(w, http.StatusUnauthorized, err.Error())
+		SendError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	var u User
-	if err := json.NewDecoder(res.Body).Decode(&u); err != nil {
-		SendError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	dbErr := TurnOnStation(h.db, u.ID)
-	if dbErr != nil {
-		SendError(w, http.StatusInternalServerError, dbErr.Error())
-		return
-	}
-	var s Station
-	s.Active = true
-	body, err := json.Marshal(s)
+	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		SendError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -242,30 +291,109 @@ func stationPost(w http.ResponseWriter, r *http.Request, h *StationHandler) {
 	w.Write(body)
 }
 
-func stationDelete(w http.ResponseWriter, r *http.Request, h *StationHandler) {
+// RecHandler : /rec
+type RecHandler struct {
+	accessTokenCookie  CookieID
+	refreshTokenCookie CookieID
+	tokenExpiryCookie  CookieID
+	clientID           string
+	clientSecret       string
+}
+
+func (h *RecHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "GET":
+		fmt.Println("GET /rec")
+		recGet(w, r, h)
+	default:
+		SendBadRequest(w, r.Method)
+	}
+
+}
+
+func recGet(w http.ResponseWriter, r *http.Request, h *RecHandler) {
 	accessToken, err := LoadAccessToken(w, r, h.accessTokenCookie, h.refreshTokenCookie, h.tokenExpiryCookie, h.clientID, h.clientSecret)
 	if err != nil {
 		SendError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
-	res, err := SpotifyGet(r, "/me", accessToken)
+	url := fmt.Sprintf("/recommendations?market=US&%s", r.URL.RawQuery)
+	res, err := SpotifyGet(r, url, accessToken)
+	if err != nil {
+		SendError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		SendError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(body)
+}
+
+// PlaylistHandler : /rec
+type PlaylistHandler struct {
+	accessTokenCookie  CookieID
+	refreshTokenCookie CookieID
+	tokenExpiryCookie  CookieID
+	clientID           string
+	clientSecret       string
+}
+
+func (h *PlaylistHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "POST":
+		fmt.Println("POST /playlist")
+		playlistPost(w, r, h)
+	default:
+		SendBadRequest(w, r.Method)
+	}
+
+}
+
+func playlistPost(w http.ResponseWriter, r *http.Request, h *PlaylistHandler) {
+	// get user access token
+	accessToken, err := LoadAccessToken(w, r, h.accessTokenCookie, h.refreshTokenCookie, h.tokenExpiryCookie, h.clientID, h.clientSecret)
 	if err != nil {
 		SendError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
-	var u User
-	if err := json.NewDecoder(res.Body).Decode(&u); err != nil {
-		SendError(w, http.StatusInternalServerError, err.Error())
+
+	// get user id
+	meRes, err := SpotifyGet(r, "/me", accessToken)
+	if err != nil {
+		SendError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	dbErr := TurnOffStation(h.db, u.ID)
-	if dbErr != nil {
-		SendError(w, http.StatusInternalServerError, dbErr.Error())
+	var me User
+	json.NewDecoder(meRes.Body).Decode(&me)
+
+	// create user playlist
+	userPlaylistEndpoint := fmt.Sprintf("/users/%s/playlists", me.ID)
+	var pb PlaylistBody
+	pb.Name = "RecPlaylist"
+	playlistReqBody := new(bytes.Buffer)
+	json.NewEncoder(playlistReqBody).Encode(pb)
+	playlistReq, err := SpotifyPost(r, userPlaylistEndpoint, playlistReqBody, accessToken)
+	if err != nil {
+		SendError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	var s Station
-	s.Active = false
-	body, err := json.Marshal(s)
+
+	// add tracks from body to playlist
+	var playlistResponse PlaylistResponse
+	json.NewDecoder(playlistReq.Body).Decode(&playlistResponse)
+	ptEndpoint := fmt.Sprintf("/users/%s/playlists/%s/tracks", me.ID, playlistResponse.ID)
+	ptPostRes, err := SpotifyPost(r, ptEndpoint, r.Body, accessToken)
+	if err != nil {
+		SendError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// return playlist id from spotify
+	body, err := ioutil.ReadAll(ptPostRes.Body)
 	if err != nil {
 		SendError(w, http.StatusInternalServerError, err.Error())
 		return
