@@ -90,10 +90,9 @@ func callbackGet(w http.ResponseWriter, r *http.Request, h *CallbackHandler) {
 	}
 	accessTokenExpiry := time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
 	yearExpiry := time.Now().Add(365 * 24 * time.Hour)
-	tokenExpiryValue := accessTokenExpiry.Format(TimeLayout)
 	WriteCookie(w, h.accessTokenCookie, token.AccessToken, accessTokenExpiry)
 	WriteCookie(w, h.refreshTokenCookie, token.RefreshToken, yearExpiry)
-	WriteCookie(w, h.tokenExpiryCookie, tokenExpiryValue, yearExpiry)
+	WriteCookie(w, h.tokenExpiryCookie, accessTokenExpiry.Format(TimeLayout), yearExpiry)
 	ClearCookie(w, h.authStateCookie)
 	http.Redirect(w, r, h.appURL, 302)
 }
@@ -149,15 +148,7 @@ func authGet(w http.ResponseWriter, r *http.Request, h *AuthHandler) {
 		SendError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
-	status := AuthStatus{Authenticated: true}
-	body, err := json.Marshal(status)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
 	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(body)
 }
 
 // SearchHandler : /search
@@ -317,7 +308,7 @@ func recGet(w http.ResponseWriter, r *http.Request, h *RecHandler) {
 		SendError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
-	url := fmt.Sprintf("/recommendations?market=US&%s", r.URL.RawQuery)
+	url := fmt.Sprintf("/recommendations?market=US&limit=30&%s", r.URL.RawQuery)
 	res, err := SpotifyGet(r, url, accessToken)
 	if err != nil {
 		SendError(w, http.StatusBadRequest, err.Error())

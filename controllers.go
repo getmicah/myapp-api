@@ -100,18 +100,6 @@ func SpotifyAuthPost(r *http.Request, body url.Values, clientID string, clientSe
 	return &tr, nil
 }
 
-// RequestNewOAuthToken : ask Spotify for a new oauth token
-func RequestNewOAuthToken(r *http.Request, refreshToken string, clientID string, clientSecret string) (*Token, error) {
-	body := url.Values{}
-	body.Set("grant_type", "refresh_token")
-	body.Set("refresh_token", refreshToken)
-	token, err := SpotifyAuthPost(r, body, clientID, clientSecret)
-	if err != nil {
-		return nil, err
-	}
-	return token, nil
-}
-
 // RequestOAuthToken : ask Spotify for an oauth token
 func RequestOAuthToken(r *http.Request, code string, redirectURI string, clientID string, clientSecret string) (*Token, error) {
 	body := url.Values{}
@@ -125,27 +113,50 @@ func RequestOAuthToken(r *http.Request, code string, redirectURI string, clientI
 	return token, nil
 }
 
+// RequestNewOAuthToken : ask Spotify for a new oauth token
+func RequestNewOAuthToken(r *http.Request, refreshToken string, clientID string, clientSecret string) (*Token, error) {
+	body := url.Values{}
+	body.Set("grant_type", "refresh_token")
+	body.Set("refresh_token", refreshToken)
+	token, err := SpotifyAuthPost(r, body, clientID, clientSecret)
+	if err != nil {
+		return nil, err
+	}
+	return token, nil
+}
+
 // LoadAccessToken : load acces token from cookies
 func LoadAccessToken(w http.ResponseWriter, r *http.Request, accessTokenCookie CookieID, refreshTokenCookie CookieID, tokenExpiryCookie CookieID, clientID string, clientSecret string) (string, error) {
-	refreshToken, err := ReadCookie(r, refreshTokenCookie)
+	tokenExpiry, err := ReadCookie(r, tokenExpiryCookie)
 	if err != nil {
 		return "", err
 	}
+	expiryTime, err := time.Parse(TimeLayout, tokenExpiry)
+	if err != nil {
+		return "", err
+	}
+	if time.Since(expiryTime) > 0 {
+		refreshToken, err := ReadCookie(r, refreshTokenCookie)
+		if err != nil {
+			return "", err
+		}
+		token, err := RequestNewOAuthToken(r, refreshToken, clientID, clientSecret)
+		if err != nil {
+			return "", err
+		}
+		newTokenExpiry := time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
+		if err := WriteCookie(w, accessTokenCookie, token.AccessToken, newTokenExpiry); err != nil {
+			return "", err
+		}
+		tokenExpiryValue := newTokenExpiry.Format(TimeLayout)
+		yearExpiry := time.Now().Add(365 * 24 * time.Hour)
+		if err := WriteCookie(w, tokenExpiryCookie, tokenExpiryValue, yearExpiry); err != nil {
+			return "", err
+		}
+		return token.AccessToken, nil
+	}
 	accessToken, err := ReadCookie(r, accessTokenCookie)
 	if err != nil {
-		if err.Error() == "expired" {
-			fmt.Println("REQUESTED NEW TOKEN :D")
-			token, err := RequestNewOAuthToken(r, refreshToken, clientID, clientSecret)
-			if err != nil {
-				return "", err
-			}
-			tokenExpiryValue := time.Now().Add(time.Duration(token.ExpiresIn) * time.Second).Format(TimeLayout)
-			yearExpiry := time.Now().Add(365 * 24 * time.Hour)
-			if err := WriteCookie(w, tokenExpiryCookie, tokenExpiryValue, yearExpiry); err != nil {
-				return "", err
-			}
-			return token.AccessToken, nil
-		}
 		return "", err
 	}
 	return accessToken, nil

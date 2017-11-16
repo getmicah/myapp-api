@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"net/http"
 	"time"
 
@@ -47,10 +46,6 @@ func ReadCookie(r *http.Request, c CookieID) (string, error) {
 	httpCookie, err := r.Cookie(c.name)
 	if err != nil {
 		return "", err
-	}
-	dur := time.Since(httpCookie.Expires).Seconds()
-	if dur < 0 {
-		return "", errors.New("expired")
 	}
 	var dst string
 	decodeErr := c.secure.Decode(c.name, httpCookie.Value, &dst)

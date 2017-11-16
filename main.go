@@ -25,7 +25,6 @@ func main() {
 	clientID := os.Getenv("SPOTIFY_CLIENT_ID")
 	clientSecret := os.Getenv("SPOTIFY_CLIENT_SECRET")
 	scope := []string{
-		"user-top-read",
 		"playlist-modify-public",
 	}
 
