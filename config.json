@@ -1,6 +1,6 @@
 {
 	"apiURL": "https://api.micahcowell.com",
-	"appURL": "http://spotify-recs.github.io",
+	"appURL": "https://spotify-recs.github.io",
 	"redirectURI": "https://api.micahcowell.com/auth/callback",
 	"production": true
 }
