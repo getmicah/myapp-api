@@ -364,7 +364,7 @@ func playlistPost(w http.ResponseWriter, r *http.Request, h *PlaylistHandler) {
 	// create user playlist
 	userPlaylistEndpoint := fmt.Sprintf("/users/%s/playlists", me.ID)
 	var pb PlaylistBody
-	pb.Name = "RecPlaylist"
+	pb.Name = "Your new playlist!"
 	playlistReqBody := new(bytes.Buffer)
 	json.NewEncoder(playlistReqBody).Encode(pb)
 	playlistReq, err := SpotifyPost(r, userPlaylistEndpoint, playlistReqBody, accessToken)
