@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"time"
@@ -22,7 +21,7 @@ const (
 
 func main() {
 	// config
-	config := getConfig("./config.json")
+	config := getConfig("~/config.json")
 	clientID := os.Getenv("SPOTIFY_CLIENT_ID")
 	clientSecret := os.Getenv("SPOTIFY_CLIENT_SECRET")
 	scope := []string{
@@ -115,10 +114,12 @@ func main() {
 
 	// Go!
 	if config.Production {
-		err := http.ListenAndServeTLS(":443", "server.crt", "server.key", nil)
-		if err != nil {
-			log.Fatal("ListenAndServe: ", err)
-		}
+		http.ListenAndServeTLS(
+			":443",
+			"/etc/letsencrypt/live/api.micahcowell.com/fullchain.pem",
+			"/etc/letsencrypt/live/api.micahcowell.com/privkey.pem",
+			app,
+		)
 	} else {
 		http.ListenAndServe(":3000", app)
 	}
