@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"time"
@@ -113,7 +114,14 @@ func main() {
 	app := c.Handler(mux)
 
 	// Go!
-	http.ListenAndServe(":3000", app)
+	if config.Production {
+		err := http.ListenAndServeTLS(":443", "server.crt", "server.key", nil)
+		if err != nil {
+			log.Fatal("ListenAndServe: ", err)
+		}
+	} else {
+		http.ListenAndServe(":3000", app)
+	}
 }
 
 // GenerateRandomString : create random string with n length
@@ -136,6 +144,7 @@ type config struct {
 	APIURL      string `json:"apiURL"`
 	AppURL      string `json:"appURL"`
 	RedirectURI string `json:"redirectURI"`
+	Production  bool   `json:"production"`
 }
 
 func getConfig(path string) config {
