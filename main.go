@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -114,12 +115,15 @@ func main() {
 
 	// Go!
 	if config.Production {
-		http.ListenAndServeTLS(
+		err := http.ListenAndServeTLS(
 			":443",
 			"/etc/letsencrypt/live/api.micahcowell.com/fullchain.pem",
 			"/etc/letsencrypt/live/api.micahcowell.com/privkey.pem",
 			app,
 		)
+		if err != nil {
+			fmt.Println(err)
+		}
 	} else {
 		http.ListenAndServe(":3000", app)
 	}
