@@ -39,3 +39,9 @@ type PlaylistResponse struct {
 type PlaylistTracksBody struct {
 	URIS []string `json:"uris"`
 }
+
+// PlaylistReturnJSON : return data for frontend
+type PlaylistReturnJSON struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+}

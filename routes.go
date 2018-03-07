@@ -324,7 +324,7 @@ func recGet(w http.ResponseWriter, r *http.Request, h *RecHandler) {
 	w.Write(body)
 }
 
-// PlaylistHandler : /rec
+// PlaylistHandler : /playlist
 type PlaylistHandler struct {
 	accessTokenCookie  CookieID
 	refreshTokenCookie CookieID
@@ -373,23 +373,28 @@ func playlistPost(w http.ResponseWriter, r *http.Request, h *PlaylistHandler) {
 		return
 	}
 
-	// add tracks from body to playlist
+	// add tracks from body to playlist (pt = playlist tracks)
 	var playlistResponse PlaylistResponse
 	json.NewDecoder(playlistReq.Body).Decode(&playlistResponse)
 	ptEndpoint := fmt.Sprintf("/users/%s/playlists/%s/tracks", me.ID, playlistResponse.ID)
-	ptPostRes, err := SpotifyPost(r, ptEndpoint, r.Body, accessToken)
-	if err != nil {
+	_, postErr := SpotifyPost(r, ptEndpoint, r.Body, accessToken)
+	if postErr != nil {
 		SendError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	// return playlist id from spotify
-	body, err := ioutil.ReadAll(ptPostRes.Body)
+	// create return object
+	p := PlaylistReturnJSON{
+		ID:       playlistResponse.ID,
+		Username: me.ID,
+	}
+	playlistJSON, err := json.Marshal(p)
 	if err != nil {
 		SendError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
 	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(body)
+	w.Write(playlistJSON)
 }

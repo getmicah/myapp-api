@@ -22,7 +22,7 @@ const (
 
 func main() {
 	// config
-	config := getConfig("./config.json")
+	config := getConfig("./config.prod.json")
 	clientID := os.Getenv("SPOTIFY_CLIENT_ID")
 	clientSecret := os.Getenv("SPOTIFY_CLIENT_SECRET")
 	scope := []string{
