@@ -1,7 +1,6 @@
 # My ignores
 .DS_Store
 spotify-recs-api
-notes
 
 # Binaries for programs and plugins
 *.exe

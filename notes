@@ -1,0 +1,6 @@
+// give non-root user premissions to ssl certs
+chgrp -R ssl-cert /etc/letsencrypt
+chmod -R g=rX /etc/letsencrypt
+
+// give non-root user access to privleged ports
+setcap 'cap_net_bind_service=+ep' /path/to/api/executable
